@@ -147,6 +147,93 @@ export async function getIndicatorHistory(
   return observations;
 }
 
+/** Data point format for trend charts */
+export interface TrendDataPoint {
+  date: string;
+  value: number;
+}
+
+/**
+ * Get trend data for a specific indicator and timeframe
+ * 
+ * @param indicatorId - Internal indicator ID
+ * @param timeframe - Timeframe: "1Y", "5Y", "10Y", "Max"
+ * @returns Array of {date, value} for charting
+ */
+export async function getIndicatorTrendHistory(
+  indicatorId: string,
+  timeframe: "1Y" | "5Y" | "10Y" | "Max" = "1Y"
+): Promise<TrendDataPoint[]> {
+  const config = getIndicatorById(indicatorId);
+  if (!config) {
+    return [];
+  }
+
+  // Map timeframe to months
+  const monthsMap: Record<"1Y" | "5Y" | "10Y" | "Max", number> = {
+    "1Y": 12,
+    "5Y": 60,
+    "10Y": 120,
+    "Max": 480, // 40 years max for performance
+  };
+
+  const months = monthsMap[timeframe];
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - months);
+
+  const observations = await fetchSeries(config.seriesId, {
+    observationStart: startDate.toISOString().split("T")[0],
+    limit: timeframe === "Max" ? 500 : 200,
+  });
+
+  // Filter and transform to chart format
+  const validData = filterAndParseObservations(observations);
+
+  return observations
+    .filter((obs) => obs.value !== "." && obs.value !== "")
+    .map((obs) => ({
+      date: obs.date,
+      value: parseFloat(obs.value),
+    }))
+    .filter((point) => !isNaN(point.value));
+}
+
+/**
+ * Generate mock trend data for development
+ */
+export function getMockTrendHistory(
+  timeframe: "1Y" | "5Y" | "10Y" | "Max" = "1Y"
+): TrendDataPoint[] {
+  const monthsMap: Record<"1Y" | "5Y" | "10Y" | "Max", number> = {
+    "1Y": 12,
+    "5Y": 60,
+    "10Y": 120,
+    "Max": 240,
+  };
+
+  const months = monthsMap[timeframe];
+  const data: TrendDataPoint[] = [];
+  const now = new Date();
+  let value = 300;
+
+  for (let i = months; i >= 0; i--) {
+    const date = new Date(now);
+    date.setMonth(date.getMonth() - i);
+    
+    // Generate somewhat realistic trending data with some volatility
+    value = value + (Math.random() - 0.4) * 5;
+    if (value < 280) value = 280;
+    if (value > 350) value = 350;
+    
+    data.push({
+      date: date.toISOString().split("T")[0],
+      value: parseFloat(value.toFixed(2)),
+    });
+  }
+
+  return data;
+}
+
 /**
  * Generate mock data for development/demo without API key
  * 

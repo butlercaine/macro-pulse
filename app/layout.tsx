@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://macropulse.app"),
   title: {
     default: "Macro Pulse | US Economic Health Dashboard",
     template: "%s | Macro Pulse",

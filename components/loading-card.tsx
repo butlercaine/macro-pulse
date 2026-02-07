@@ -4,38 +4,28 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 
 interface LoadingCardProps {
-  /** Title to display in skeleton */
   title?: string
 }
 
-/**
- * Loading Card Component
- * Shows a skeleton placeholder while data is loading
- * Matches dimensions of IndicatorCard
- */
 function LoadingCard({ title = "Loading..." }: LoadingCardProps) {
   return (
     <Card className="animate-pulse">
-      <CardContent className="p-4">
-        {/* Header skeleton */}
-        <div className="flex items-center justify-between mb-3">
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-5 w-16 rounded-full" />
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-2 mb-2 sm:mb-3">
+          <Skeleton className="h-3 sm:h-4 w-20 sm:w-24" />
+          <Skeleton className="h-5 sm:h-6 w-14 sm:w-16 rounded-full" />
         </div>
 
-        {/* Value skeleton */}
-        <div className="mb-3">
-          <Skeleton className="h-8 w-20 mb-1" />
-          <Skeleton className="h-3 w-28" />
+        <div className="mb-2 sm:mb-3">
+          <Skeleton className="h-6 sm:h-8 w-16 sm:w-20 mb-1 sm:mb-2" />
+          <Skeleton className="h-2.5 sm:h-3 w-20 sm:w-28" />
         </div>
 
-        {/* Sparkline skeleton */}
-        <div className="mb-3">
-          <Skeleton className="h-8 w-28 rounded" />
+        <div className="mb-2 sm:mb-3">
+          <Skeleton className="h-6 sm:h-8 w-20 sm:w-28 rounded" />
         </div>
 
-        {/* Footer skeleton */}
-        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-2.5 sm:h-3 w-16 sm:w-20" />
       </CardContent>
     </Card>
   )

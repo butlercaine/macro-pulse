@@ -47,6 +47,8 @@ export interface YieldCurvePoint {
 export interface IndicatorConfig {
   /** Internal ID */
   id: string;
+  /** URL slug for detail pages */
+  slug: string;
   /** Display name */
   name: string;
   /** FRED series ID */
@@ -59,6 +61,8 @@ export interface IndicatorConfig {
   showAsCard: boolean;
   /** Color for charts */
   color: string;
+  /** Brief description for detail page */
+  description?: string;
 }
 
 /** Result of change calculation */
