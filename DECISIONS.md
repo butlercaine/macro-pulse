@@ -469,3 +469,420 @@ QA requirement: no `any` types in production code.
 | 2026-02-06 | Badge Variant Extension | Accepted |
 | 2026-02-06 | Mock Data Fallback Strategy | Accepted |
 | 2026-02-06 | TypeScript Strict Mode | Accepted |
+| 2026-02-06 | Recharts Selection for Complex Charts | Accepted |
+| 2026-02-06 | Yield Curve Inversion Detection | Accepted |
+| 2026-02-06 | Client/Server Component Split | Accepted |
+| 2026-02-06 | Dynamic Routing with Static Generation | Accepted |
+| 2026-02-06 | Responsive Chart Sizing | Accepted |
+| 2026-02-06 | Vercel Deployment Configuration | Accepted |
+
+---
+
+## M2: Advanced Features Decisions
+
+### 2026-02-06 | Recharts Selection for Complex Charts
+
+**Status:** Accepted
+
+**Context:**
+Indicator cards use pure SVG sparklines (M1). Need more complex charts for yield curve and historical trends with tooltips, axes, and responsive sizing.
+
+**Options Considered:**
+- **Option A:** Recharts (React wrapper around D3)
+- **Option B:** Tremor (React components built on Recharts)
+- **Option C:** Chart.js with react-chartjs-2
+- **Option D:** Pure D3.js
+- **Option E:** Keep custom SVG approach
+
+**Decision:** Recharts for complex charts, custom SVG for sparklines.
+
+**Rationale:**
+- Recharts is React-native and works well with Next.js Server Components
+- Built-in responsive containers handle chart sizing
+- Good TypeScript support
+- Custom tooltips, axes, and gradients available
+- Sparklines don't need axes/tooltids = lighter bundle
+- Tremor would add another abstraction layer
+- Previous project (CreditWatch) validated Recharts usage
+
+**Consequences:**
+- Must handle SSR (charts don't render during static generation)
+- `ResponsiveContainer` needs fixed-height parent
+- Gradient fills via `<defs>` in SVG
+- Warning during build (expected): `width(-1) height(-1)` when no data
+
+**References:**
+- TASK_008_RESPONSE.md (yield curve chart)
+- TASK_009_RESPONSE.md (trend chart)
+- PROJECT_BRIEF Success Criteria (#2, #3)
+
+---
+
+### 2026-02-06 | Yield Curve Inversion Detection Logic
+
+**Status:** Accepted
+
+**Context:**
+Yield curve chart needs to detect and display recession signals when short-term rates exceed long-term rates.
+
+**Options Considered:**
+- **Option A:** Calculate spread for each page load
+- **Option B:** Pre-calculate during data fetch
+- **Option C:** Store inversion status in database
+
+**Decision:** Calculate spread during data fetch, store result in analysis object.
+
+**Rationale:**
+- Simple calculation: `longTermYield - shortTermYield`
+- Negative = inverted (short-term > long-term)
+- Spread value useful for display (e.g., "-0.24%")
+- No database needed — calculated from FRED data
+- Reusable function in `lib/yield-utils.ts`
+
+**Inversion Logic:**
+```typescript
+// 2Y > 10Y = inverted (recession signal)
+// 2Y = shortTerm, 10Y = longTerm
+const isInverted = shortTermYield > longTermYield
+const spread = longTermYield - shortTermYield
+```
+
+**Consequences:**
+- Color-coded visualization (red=inverted, green=normal)
+- Badge text changes: "INVERTED (Recession Signal)" vs "NORMAL"
+- Spread displayed with sign (+/-)
+
+**References:**
+- TASK_008_RESPONSE.md
+- TASK_013_qa_REPORT.md (validated)
+
+---
+
+### 2026-02-06 | Client/Server Component Split
+
+**Status:** Accepted
+
+**Context:**
+Dashboard uses Server Components for data fetching (ISR). Detail pages need interactivity (timeframe selector, chart hover).
+
+**Options Considered:**
+- **Option A:** All interactive components as Client Components
+- **Option B:** All components as Server Components with query params
+- **Option C:** Hybrid: Server Components for data, Client Components for interactivity
+
+**Decision:** Hybrid approach — Server Components for page + data fetching, Client Components for interactive charts.
+
+**Component Architecture:**
+```
+app/page.tsx (Server)
+├── Suspense → IndicatorGrid
+│   └── IndicatorCard (Server → renders static)
+├── YieldCurveSection
+│   └── YieldCurveChart (Client → Recharts needs window)
+└── Loading skeletons (Client)
+
+app/indicator/[slug]/page.tsx (Server)
+├── Suspense → IndicatorDetail (Client)
+│   ├── TimeframeSelector (Client)
+│   └── TrendChart (Client → Recharts)
+```
+
+**Rationale:**
+- ISR requires Server Components for data fetching
+- Recharts needs client-side hydration for tooltips/interactions
+- Timeframe selector needs React state
+- Keep client bundle small — only interactive parts
+
+**Consequences:**
+- `"use client"` directive on chart components
+- Data fetched in Server Component, passed as props
+- Charts render skeleton during SSR
+- Build warning expected (charts have no dimensions during SSG)
+
+**References:**
+- TASK_009_RESPONSE.md (TrendChart client component)
+- TASK_010_RESPONSE.md (IndicatorDetail client component)
+
+---
+
+### 2026-02-06 | Dynamic Routing with Static Generation
+
+**Status:** Accepted
+
+**Context:**
+6 indicator detail pages need SEO and fast loading. Not all users will visit every page.
+
+**Options Considered:**
+- **Option A:** Fully dynamic (SSR on every request)
+- **Option B:** Static Generation (SSG) for all pages
+- **Option C:** Incremental Static Regeneration (ISR) with `generateStaticParams`
+
+**Decision:** ISR with `generateStaticParams()` for pre-generation + 24h revalidation.
+
+**Implementation:**
+```typescript
+// app/indicator/[slug]/page.tsx
+export async function generateStaticParams() {
+  return INDICATOR_SLUGS.map((slug) => ({ slug }))
+}
+
+export const revalidate = 86400 // ISR: regenerate every 24 hours
+```
+
+**Rationale:**
+- Pre-generates all 6 pages at build time
+- ISR allows updates without full rebuild
+- 24h revalidation matches FRED data frequency
+- SEO-friendly: each page has static HTML
+- Fast: served from CDN, no runtime fetch
+
+**Routes Generated:**
+```
+/indicator/cpi          (1d ISR)
+/indicator/unemployment  (1d ISR)
+/indicator/gdp          (1d ISR)
+/indicator/fed-funds    (1d ISR)
+/indicator/treasury-10y (1d ISR)
+/indicator/treasury-2y  (1d ISR)
+```
+
+**Consequences:**
+- All 6 pages built at deploy time
+- Revalidated every 24 hours
+- Invalid slug shows 404 (via `notFound()`)
+
+**References:**
+- TASK_010_RESPONSE.md
+- TASK_013_qa_REPORT.md (all routes generated)
+
+---
+
+### 2026-02-06 | Responsive Chart Sizing
+
+**Status:** Accepted
+
+**Context:**
+Charts need to render well on mobile (375px) and desktop (1440px+) with different container widths.
+
+**Options Considered:**
+- **Option A:** Fixed pixel dimensions
+- **Option B:** Percentage-based with CSS
+- **Option C:** Tailwind-responsive classes with `ResponsiveContainer`
+
+**Decision:** Tailwind breakpoints + Recharts `ResponsiveContainer` with fixed-height values per breakpoint.
+
+**Chart Height Strategy:**
+| Viewport | Yield Curve | Trend Chart | Indicator Detail |
+|----------|-------------|-------------|------------------|
+| Mobile (default) | 220px | 250px | 250px |
+| Tablet (sm) | 280px | 280px | 320px |
+| Desktop (lg) | 320px | 300px | 380px |
+
+**Implementation:**
+```tsx
+<ResponsiveContainer width="100%" height={height}>
+  <LineChart data={data}>
+```
+
+```tsx
+// Tailwind height class based on parent
+<div className="h-[220px] sm:h-[280px] lg:h-[320px]">
+```
+
+**Rationale:**
+- Fixed heights prevent layout shift during load
+- Breakpoints scale appropriately with viewport
+- ResponsiveContainer handles width dynamically
+- Height values tested at 375px and 1440px
+
+**Consequences:**
+- No horizontal scroll at 375px
+- Charts scale smoothly between breakpoints
+- Y-axis labels remain readable on all viewports
+
+**References:**
+- TASK_011_RESPONSE.md
+- TASK_013_qa_REPORT.md (responsive design validated)
+
+---
+
+### 2026-02-06 | Vercel Deployment Configuration
+
+**Status:** Accepted
+
+**Context:**
+Project needs to deploy to Vercel with ISR, environment variables, and proper metadata.
+
+**Options Considered:**
+- **Option A:** Default Vercel configuration
+- **Option B:** Edge runtime with custom caching
+- **Option C:** Standard Next.js configuration with metadataBase
+
+**Decision:** Standard Next.js with `metadataBase` and ISR.
+
+**Changes Made:**
+```typescript
+// app/layout.tsx
+const metadataBase = new URL("https://macropulse.app")
+```
+
+**Rationale:**
+- `metadataBase` resolves OG image warnings
+- Standard ISR works out of box on Vercel
+- No additional configuration needed
+- Environment variables handled via Vercel dashboard
+
+**Files Updated:**
+- `app/layout.tsx` — metadataBase added
+- `.env.local.example` — FRED_API_KEY documented
+- `README.md` — deployment instructions added
+
+**Consequences:**
+- OG images resolve correctly
+- Build completes without metadata warnings
+- Documentation for deployment
+
+**References:**
+- TASK_012_RESPONSE.md
+- TASK_013_qa_REPORT.md (deployment readiness validated)
+
+---
+
+## Project Summary
+
+### What Worked Well
+
+1. **Hybrid Rendering Strategy**
+   - Server Components for data fetching + ISR = fast initial loads
+   - Client Components for interactivity = smooth user experience
+   - Separating sparklines (SVG) from complex charts (Recharts) kept bundle small
+
+2. **Centralized Configuration**
+   - Single `INDICATORS` array made it easy to add/change indicators
+   - Slug generation automatic from configuration
+   - Mock data fallback seamless — same types throughout
+
+3. **TypeScript Strict Mode**
+   - Caught errors at compile time
+   - Self-documenting code via interfaces
+   - No `any` types meant reliable refactoring
+
+4. **Responsive Mobile-First**
+   - Default mobile styles, scale up with breakpoints
+   - Fixed chart heights prevented layout shift
+   - Touch targets met accessibility guidelines
+
+5. **Component Architecture**
+   - shadcn/ui provided accessible foundations
+   - Recharts handled complex visualizations
+   - Custom SVG sparklines were lightweight
+
+### Key Learnings
+
+1. **Recharts + SSR**: Charts need client-side hydration; build warnings about dimensions are expected and harmless.
+
+2. **ISR + FRED API**: 24h revalidation aligns with FRED's data update frequency. Rate limits (120 req/min) are protected by caching.
+
+3. **Static Generation + Dynamic Routes**: `generateStaticParams()` pre-builds all pages, but ISR ensures they stay fresh.
+
+4. **Mock Data Strategy**: Runtime fallback enabled development without API keys while maintaining type safety.
+
+5. **CSS Variables for Theming**: shadcn/ui's CSS variable approach made dark theme consistent across all components.
+
+### Challenges Overcame
+
+1. **No `src/` Directory**: Adjusted to root-level `app/` directory per requirements; shorter import paths as benefit.
+
+2. **Manual shadcn/ui**: Avoided CLI for CI/CD compatibility; traded setup effort for version-control friendly components.
+
+3. **Chart SSR Warnings**: Accepted Recharts dimension warnings during build; charts render correctly at runtime.
+
+4. **Mobile Chart Sizing**: Found optimal heights for each viewport to balance information density and readability.
+
+### Decisions That Paid Off
+
+| Decision | Benefit |
+|----------|---------|
+| Server-side FRED API client | API key never exposed, ISR-compatible |
+| Mock data fallback | Development without API key, build always succeeds |
+| Hybrid client/server split | Fast initial load + interactive charts |
+| ISR (24h) | Fresh data without hitting rate limits |
+| Pure SVG sparklines | Lighter bundle than charting library |
+| Tailwind breakpoints | Consistent responsive behavior |
+
+### Decisions to Revisit (Future)
+
+| Decision | Consideration |
+|----------|---------------|
+| Fixed chart heights | Consider responsive heights based on data density |
+| Manual shadcn/ui | CLI might speed up adding new components |
+| No database | For advanced features (alerts, historical analysis), database might help |
+| Single API key | Multi-key rotation could handle high traffic |
+
+### Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total decisions documented | 20 |
+| M1 decisions | 14 |
+| M2 decisions | 6 |
+| Files created (M1 + M2) | ~25 components + utilities |
+| Routes | 8 (/, /_not-found, 6 indicator pages) |
+| ISR revalidation | 86400 seconds (24 hours) |
+| QA checks passed | 56/56 (M1: 22, M2: 34) |
+
+### Tech Stack Final
+
+- **Framework:** Next.js 16.1.6 (App Router)
+- **Language:** TypeScript (strict mode)
+- **Styling:** Tailwind CSS + shadcn/ui
+- **Charts:** Recharts + Custom SVG
+- **Data:** FRED API + Mock fallback
+- **Rendering:** Server Components + Client Components
+- **Deployment:** Vercel with ISR
+- **Type Safety:** Full TypeScript, no `any`
+
+---
+
+## Appendix
+
+### Indicator Reference
+
+| ID | Name | FRED Series | Frequency |
+|----|------|------------|-----------|
+| cpi | Consumer Price Index | CPIAUCSL | Monthly |
+| unemployment | Unemployment Rate | UNRATE | Monthly |
+| gdp | GDP Growth Rate | A191RL1Q225SBEA | Quarterly |
+| fedfunds | Federal Funds Rate | FEDFUNDS | Monthly |
+| dgs10 | 10-Year Treasury Yield | DGS10 | Daily |
+| dgs2 | 2-Year Treasury Yield | DGS2 | Daily |
+
+### Yield Curve Series
+
+| Series | Maturity |
+|--------|----------|
+| DGS2 | 2-Year |
+| DGS5 | 5-Year |
+| DGS10 | 10-Year |
+| DGS30 | 30-Year |
+
+### Routes
+
+| Route | Type | Revalidation |
+|-------|------|--------------|
+| `/` | ISR | 24h |
+| `/indicator/[slug]` | ISR + SSG | 24h |
+| `/_not-found` | Static | - |
+
+### Acknowledgments
+
+- **FRED:** Federal Reserve Economic Data (https://fred.stlouisfed.org)
+- **shadcn/ui:** https://ui.shadcn.com
+- **Recharts:** https://recharts.org
+- **Tailwind CSS:** https://tailwindcss.com
+- **Next.js:** https://nextjs.org
+
+---
+
+*Documented by: scribe*
+*Last update: 2026-02-06*
